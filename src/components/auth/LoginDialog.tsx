@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { sendPhoneOTP, verifyPhoneOTP } from "@/db/api";
+import { loginWithEmail, registerWithEmail } from "@/db/api";
 import { BRAND_NAME } from "@/config/brand";
 
 interface LoginDialogProps {
@@ -13,30 +13,28 @@ interface LoginDialogProps {
   onLoginSuccess?: () => void;
 }
 
+type AuthMode = "login" | "register";
+
 export function LoginDialog({ open, onOpenChange, onLoginSuccess }: LoginDialogProps) {
-  const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
+  const [mode, setMode] = useState<AuthMode>("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [inviteCode, setInviteCode] = useState("");
-  const [step, setStep] = useState<"phone" | "otp">("phone");
   const [loading, setLoading] = useState(false);
-  const [countdown, setCountdown] = useState(0);
   const [previousOpen, setPreviousOpen] = useState(false);
 
-  // 从URL获取邀请码
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const inviteParam = urlParams.get('invite');
+    const inviteParam = urlParams.get("invite");
     if (inviteParam) {
-      setInviteCode(inviteParam);
-      console.log('[邀请系统] 从URL获取邀请码:', inviteParam);
+      setInviteCode(inviteParam.toUpperCase());
+      console.log("[邀请系统] 从URL获取邀请码:", inviteParam);
     }
   }, []);
 
-  // 监听弹窗关闭事件
   useEffect(() => {
-    // 当弹窗从打开变为关闭时
     if (previousOpen && !open) {
-      // 显示提醒
       toast.warning("未登录用户无法正常保存数据哦！", {
         duration: 3000,
       });
@@ -44,132 +42,95 @@ export function LoginDialog({ open, onOpenChange, onLoginSuccess }: LoginDialogP
     setPreviousOpen(open);
   }, [open, previousOpen]);
 
-  // 验证手机号格式
-  const validatePhone = (phone: string) => {
-    const phoneRegex = /^1[3-9]\d{9}$/;
-    return phoneRegex.test(phone);
+  const resetForm = () => {
+    setEmail("");
+    setPassword("");
+    setConfirmPassword("");
+    setInviteCode("");
   };
 
-  // 发送验证码
-  const handleSendOTP = async () => {
-    if (!validatePhone(phone)) {
-      toast.error("请输入正确的手机号");
-      return;
+  const validateEmail = (value: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(value);
+  };
+
+  const handleAuthSuccess = async (showRewardToast?: boolean) => {
+    setPreviousOpen(false);
+    resetForm();
+    onOpenChange(false);
+
+    if (onLoginSuccess) {
+      try {
+        await onLoginSuccess();
+      } catch (callbackError) {
+        console.error("❌ [登录验证] onLoginSuccess回调失败:", callbackError);
+      }
     }
 
-    setLoading(true);
-    try {
-      await sendPhoneOTP(phone);
-      toast.success("验证码已发送");
-      setStep("otp");
-      
-      // 开始倒计时
-      setCountdown(60);
-      const timer = setInterval(() => {
-        setCountdown((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } catch (error: any) {
-      console.error("发送验证码失败:", error);
-      
-      // 根据错误类型提供更友好的提示
-      let errorMessage = "发送验证码失败，请重试";
-      
-      if (error.message?.includes("Failed to fetch") || error.name === "AuthRetryableFetchError") {
-        errorMessage = "验证码服务暂时不可用，请稍后再试或联系管理员";
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      toast.error(errorMessage, {
+    if (showRewardToast) {
+      toast.success(`登录成功！欢迎加入${BRAND_NAME}，您已获得100码分注册奖励！`, {
         duration: 5000,
       });
-    } finally {
-      setLoading(false);
+    } else {
+      toast.success("登录成功！");
     }
   };
 
-  // 验证登录
-  const handleVerifyOTP = async () => {
-    if (!otp || otp.length !== 6) {
-      toast.error("请输入6位验证码");
+  const handleLogin = async () => {
+    if (!validateEmail(email)) {
+      toast.error("请输入正确的邮箱");
+      return;
+    }
+    if (!password || password.length < 6) {
+      toast.error("请输入至少6位密码");
       return;
     }
 
-    console.log('🔐 [登录验证] 开始验证验证码...');
     setLoading(true);
-    
     try {
-      console.log('🔐 [登录验证] 调用verifyPhoneOTP...');
-      
-      // 添加超时保护，防止永久卡住
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('验证超时，请重试')), 30000); // 30秒超时
-      });
-      
-      const verifyPromise = verifyPhoneOTP(phone, otp, inviteCode || undefined);
-      
-      await Promise.race([verifyPromise, timeoutPromise]);
-      console.log('✅ [登录验证] verifyPhoneOTP成功');
-      
-      // 等待500ms，确保session已保存到localStorage
-      console.log('⏳ [登录验证] 等待session保存到localStorage...');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      console.log('✅ [登录验证] session保存完成');
-      
-      // 先设置previousOpen为false，避免触发关闭提醒
-      setPreviousOpen(false);
-      
-      // 重置状态
-      setPhone("");
-      setOtp("");
-      setInviteCode("");
-      setStep("phone");
-      
-      // 关闭弹窗
-      console.log('🔐 [登录验证] 关闭登录弹窗');
-      onOpenChange(false);
-      
-      // 调用登录成功回调，让父组件刷新状态
-      if (onLoginSuccess) {
-        console.log('🔐 [登录验证] 调用onLoginSuccess回调...');
-        try {
-          await onLoginSuccess();
-          console.log('✅ [登录验证] onLoginSuccess回调完成');
-        } catch (callbackError) {
-          console.error('❌ [登录验证] onLoginSuccess回调失败:', callbackError);
-          // 即使回调失败，也不影响登录流程
-        }
-      }
-      
-      // 显示登录成功和奖励信息
-      if (inviteCode) {
-        toast.success(`登录成功！欢迎加入${BRAND_NAME}，您已获得100码分注册奖励！`, {
-          duration: 5000,
-        });
-      } else {
-        toast.success("登录成功！");
-      }
-      
-      console.log('✅ [登录验证] 登录流程完成');
+      await loginWithEmail(email.trim(), password);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await handleAuthSuccess(false);
     } catch (error: any) {
-      console.error("❌ [登录验证] 验证失败:", error);
-      toast.error(error.message || "验证码错误，请重试");
+      console.error("❌ [邮箱登录] 失败:", error);
+      toast.error(error.message || "登录失败，请重试");
     } finally {
-      console.log('🔐 [登录验证] 重置loading状态');
       setLoading(false);
     }
   };
 
-  // 重新发送验证码
-  const handleResendOTP = () => {
-    setStep("phone");
-    setOtp("");
+  const handleRegister = async () => {
+    if (!validateEmail(email)) {
+      toast.error("请输入正确的邮箱");
+      return;
+    }
+    if (!password || password.length < 6) {
+      toast.error("密码至少6位");
+      return;
+    }
+    if (password !== confirmPassword) {
+      toast.error("两次输入的密码不一致");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await registerWithEmail(email.trim(), password, inviteCode || undefined);
+      if (result.session) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        await handleAuthSuccess(Boolean(inviteCode));
+      } else {
+        toast.success("注册成功！请查收邮箱完成验证后登录。", { duration: 5000 });
+        setMode("login");
+        setPassword("");
+        setConfirmPassword("");
+      }
+    } catch (error: any) {
+      console.error("❌ [邮箱注册] 失败:", error);
+      toast.error(error.message || "注册失败，请重试");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -177,27 +138,65 @@ export function LoginDialog({ open, onOpenChange, onLoginSuccess }: LoginDialogP
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold text-center">
-            {step === "phone" ? "手机号登录" : "输入验证码"}
+            {mode === "login" ? "邮箱登录" : "邮箱注册"}
           </DialogTitle>
           <DialogDescription className="text-center">
-            {step === "phone" 
-              ? "请输入您的手机号，我们将发送验证码" 
-              : `验证码已发送至 ${phone}`}
+            {mode === "login"
+              ? "使用邮箱与密码登录"
+              : "注册后即可开始创作"}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {step === "phone" ? (
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              variant={mode === "login" ? "default" : "outline"}
+              onClick={() => setMode("login")}
+              className="w-full"
+            >
+              登录
+            </Button>
+            <Button
+              variant={mode === "register" ? "default" : "outline"}
+              onClick={() => setMode("register")}
+              className="w-full"
+            >
+              注册
+            </Button>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="email">邮箱</Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="password">密码</Label>
+            <Input
+              id="password"
+              type="password"
+              placeholder="至少6位"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+
+          {mode === "register" && (
             <>
               <div className="space-y-2">
-                <Label htmlFor="phone">手机号</Label>
+                <Label htmlFor="confirmPassword">确认密码</Label>
                 <Input
-                  id="phone"
-                  type="tel"
-                  placeholder="请输入手机号"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  maxLength={11}
+                  id="confirmPassword"
+                  type="password"
+                  placeholder="再次输入密码"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
                 />
               </div>
               <div className="space-y-2">
@@ -205,7 +204,7 @@ export function LoginDialog({ open, onOpenChange, onLoginSuccess }: LoginDialogP
                 <Input
                   id="inviteCode"
                   type="text"
-                  placeholder="输入邀请码可获得额外奖励"
+                  placeholder="输入邀请码可获得奖励"
                   value={inviteCode}
                   onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
                   maxLength={8}
@@ -216,51 +215,16 @@ export function LoginDialog({ open, onOpenChange, onLoginSuccess }: LoginDialogP
                   </p>
                 )}
               </div>
-              <Button 
-                onClick={handleSendOTP} 
-                disabled={loading || !phone}
-                className="w-full"
-              >
-                {loading ? "发送中..." : "获取验证码"}
-              </Button>
-            </>
-          ) : (
-            <>
-              <div className="space-y-2">
-                <Label htmlFor="otp">验证码</Label>
-                <Input
-                  id="otp"
-                  type="text"
-                  placeholder="请输入6位验证码"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                  maxLength={6}
-                />
-              </div>
-              <Button 
-                onClick={handleVerifyOTP} 
-                disabled={loading || !otp}
-                className="w-full"
-              >
-                {loading ? "验证中..." : "登录"}
-              </Button>
-              <div className="text-center text-sm">
-                {countdown > 0 ? (
-                  <span className="text-muted-foreground">
-                    {countdown}秒后可重新发送
-                  </span>
-                ) : (
-                  <Button
-                    variant="link"
-                    onClick={handleResendOTP}
-                    className="p-0 h-auto"
-                  >
-                    重新发送验证码
-                  </Button>
-                )}
-              </div>
             </>
           )}
+
+          <Button
+            onClick={mode === "login" ? handleLogin : handleRegister}
+            disabled={loading || !email || !password}
+            className="w-full"
+          >
+            {loading ? "处理中..." : mode === "login" ? "登录" : "注册并开始"}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

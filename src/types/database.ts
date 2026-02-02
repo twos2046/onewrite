@@ -9,6 +9,7 @@ export type TransactionType = 'grant' | 'consume' | 'upgrade' | 'refund' | 'rech
 // 用户表类型
 export interface DbUser {
   id: string;
+  email?: string | null;
   phone: string | null;
   nickname: string;
   avatar_url: string | null;

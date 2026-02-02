@@ -172,7 +172,7 @@ export default function UserManagement() {
           {/* 搜索栏 */}
           <div className="flex gap-2">
             <Input
-              placeholder="搜索用户昵称或手机号..."
+              placeholder="搜索用户昵称或邮箱..."
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -212,7 +212,7 @@ export default function UserManagement() {
               <TableHeader>
                 <TableRow className="bg-slate-700/50 hover:bg-slate-700/50">
                   <TableHead className="text-slate-300">昵称</TableHead>
-                  <TableHead className="text-slate-300">手机号</TableHead>
+                  <TableHead className="text-slate-300">邮箱</TableHead>
                   <TableHead className="text-slate-300 text-center">角色</TableHead>
                   <TableHead className="text-slate-300 text-center">会员等级</TableHead>
                   <TableHead className="text-slate-300 text-center">码分</TableHead>
@@ -247,7 +247,7 @@ export default function UserManagement() {
                         </div>
                       </TableCell>
                       <TableCell className="text-slate-300 max-xl:hidden">
-                        {user.phone || '-'}
+                        {user.email || user.phone || '-'}
                       </TableCell>
                       <TableCell className="text-center">
                         {user.is_admin ? (

@@ -255,6 +255,7 @@ export interface UpdateAnnouncementInput {
 // 用户信息（包含管理员标识）
 export interface UserWithAdmin {
   id: string;
+  email?: string | null;
   phone: string | null;
   nickname: string;
   avatar_url: string | null;

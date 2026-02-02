@@ -995,7 +995,7 @@ return (
                             </Badge>
                           </div>
                           <p className="text-sm text-muted-foreground">
-                            {currentUser.phone || '未绑定联系方式'}
+                            {currentUser.email || currentUser.phone || '未绑定邮箱'}
                           </p>
                         </div>
                       </div>

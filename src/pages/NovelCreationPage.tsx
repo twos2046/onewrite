@@ -122,7 +122,7 @@ const NovelCreationPage: React.FC = () => {
     console.log('👤 [NovelCreationPage] currentUser是否存在:', !!currentUser);
     if (currentUser) {
       console.log('👤 [NovelCreationPage] 用户ID:', currentUser.id);
-      console.log('👤 [NovelCreationPage] 用户手机:', currentUser.phone);
+      console.log('👤 [NovelCreationPage] 用户邮箱:', currentUser.email || currentUser.phone);
       console.log('👤 [NovelCreationPage] 会员等级:', currentUser.membership_level);
     }
   }, [currentUser]);

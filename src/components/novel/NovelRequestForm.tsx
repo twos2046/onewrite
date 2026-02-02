@@ -104,7 +104,7 @@ const NovelRequestForm: React.FC<NovelRequestFormProps> = ({ onSubmit, isGenerat
     console.log('👤 NovelRequestForm - currentUser是否存在:', !!currentUser);
     if (currentUser) {
       console.log('👤 NovelRequestForm - 用户ID:', currentUser.id);
-      console.log('👤 NovelRequestForm - 用户手机:', currentUser.phone);
+      console.log('👤 NovelRequestForm - 用户邮箱:', currentUser.email || currentUser.phone);
     }
   }, [currentUser]);
 

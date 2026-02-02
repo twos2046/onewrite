@@ -27,129 +27,153 @@ import { handleUserRegistration } from "./invite-api";
 
 // ==================== 认证相关 ====================
 
+const buildNickname = (email?: string | null, fallback?: string | null) => {
+  if (email) {
+    return email.split("@")[0].slice(0, 12) || "新用户";
+  }
+  if (fallback) {
+    return `用户${fallback.slice(-4)}`;
+  }
+  return `用户${Date.now().toString().slice(-4)}`;
+};
+
+const ensureUserProfile = async (
+  user: { id: string; email?: string | null; phone?: string | null },
+  inviteCode?: string,
+  allowRewards: boolean = true
+) => {
+  console.log("🔍 [检查用户] 开始查询users表，用户ID:", user.id);
+  const { data: existingUser, error: userError } = await supabase
+    .from("users")
+    .select("*")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  console.log("🔍 [检查用户] 查询完成");
+
+  if (userError) {
+    console.error("❌ [检查用户] 查询失败:", userError);
+    return;
+  }
+
+  const email = user.email ?? null;
+  const phone = user.phone ?? null;
+
+  if (!existingUser) {
+    console.log("➕ [创建用户] 用户不存在，开始创建新用户记录");
+    const { error: insertError } = await supabase
+      .from("users")
+      .insert({
+        id: user.id,
+        email,
+        phone,
+        nickname: buildNickname(email, phone),
+      });
+
+    console.log("➕ [创建用户] 插入操作完成");
+
+    if (insertError) {
+      console.error("❌ [创建用户] 失败:", insertError);
+      return;
+    }
+
+    console.log("✅ [创建用户] 成功");
+
+    if (allowRewards) {
+      console.log("🎁 [注册奖励] 开始处理注册奖励和邀请奖励");
+      try {
+        await handleUserRegistration(user.id, inviteCode);
+        console.log("✅ [注册奖励] 处理完成");
+      } catch (rewardError) {
+        console.error("❌ [注册奖励] 处理失败:", rewardError);
+      }
+    }
+    return;
+  }
+
+  if (!existingUser.email && email) {
+    console.log("✏️ [检查用户] 补充邮箱信息");
+    await supabase.from("users").update({ email }).eq("id", user.id);
+  }
+
+  if (allowRewards) {
+    try {
+      await handleUserRegistration(user.id, inviteCode);
+    } catch (rewardError) {
+      console.error("❌ [注册奖励] 处理失败:", rewardError);
+    }
+  }
+};
+
 /**
- * 发送手机验证码
+ * 邮箱注册
  */
-export async function sendPhoneOTP(phone: string) {
+export async function registerWithEmail(email: string, password: string, inviteCode?: string) {
   console.log("========================================");
-  console.log("📱 [发送验证码] 开始");
-  console.log("📱 手机号:", phone);
-  
+  console.log("📧 [邮箱注册] 开始");
+  console.log("邮箱:", email);
+  console.log("邀请码:", inviteCode || "无");
+
   try {
-    const formattedPhone = phone.startsWith('+') ? phone : `+86${phone}`;
-    console.log("📱 格式化后的手机号:", formattedPhone);
-    
-    const { data, error } = await supabase.auth.signInWithOtp({
-      phone: formattedPhone,
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
     });
 
     if (error) {
-      console.error("❌ [发送验证码] 失败:", error);
-      console.error("错误代码:", error.code);
-      console.error("错误消息:", error.message);
-      console.error("错误状态:", error.status);
+      console.error("❌ [邮箱注册] 失败:", error);
       throw error;
     }
 
-    console.log("✅ [发送验证码] 成功");
-    console.log("返回数据:", data);
+    console.log("✅ [邮箱注册] 成功");
+    console.log("用户信息:", data.user);
+    console.log("会话信息:", data.session);
+
+    if (data.user) {
+      const allowRewards = Boolean(data.session);
+      await ensureUserProfile(data.user, inviteCode, allowRewards);
+    }
+
     console.log("========================================");
     return data;
   } catch (error) {
-    console.error("❌ [发送验证码] 异常:", error);
+    console.error("❌ [邮箱注册] 异常:", error);
     console.log("========================================");
     throw error;
   }
 }
 
 /**
- * 验证手机验证码并登录
+ * 邮箱登录
  */
-export async function verifyPhoneOTP(phone: string, token: string, inviteCode?: string) {
+export async function loginWithEmail(email: string, password: string) {
   console.log("========================================");
-  console.log("🔐 [验证登录] 开始");
-  console.log("手机号:", phone);
-  console.log("验证码:", token);
-  console.log("邀请码:", inviteCode || '无');
-  
+  console.log("🔐 [邮箱登录] 开始");
+  console.log("邮箱:", email);
+
   try {
-    const formattedPhone = phone.startsWith('+') ? phone : `+86${phone}`;
-    console.log("格式化后的手机号:", formattedPhone);
-    
-    const { data, error } = await supabase.auth.verifyOtp({
-      phone: formattedPhone,
-      token,
-      type: 'sms',
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
     });
 
-    console.log("🔍 [验证登录] verifyOtp调用完成");
-    
     if (error) {
-      console.error("❌ [验证登录] 失败:", error);
-      console.error("错误代码:", error.code);
-      console.error("错误消息:", error.message);
-      console.error("错误状态:", error.status);
+      console.error("❌ [邮箱登录] 失败:", error);
       throw error;
     }
 
-    console.log("✅ [验证登录] 成功");
+    console.log("✅ [邮箱登录] 成功");
     console.log("用户信息:", data.user);
     console.log("会话信息:", data.session);
-    
-    // 检查用户是否已存在于users表
+
     if (data.user) {
-      console.log("🔍 [检查用户] 开始查询users表，用户ID:", data.user.id);
-      const { data: existingUser, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', data.user.id)
-        .maybeSingle();
-
-      console.log("🔍 [检查用户] 查询完成");
-      
-      if (userError) {
-        console.error("❌ [检查用户] 查询失败:", userError);
-        // 查询失败不影响登录，继续流程
-      } else if (!existingUser) {
-        console.log("➕ [创建用户] 用户不存在，开始创建新用户记录");
-        const { error: insertError } = await supabase
-          .from('users')
-          .insert({
-            id: data.user.id,
-            phone: formattedPhone,
-            nickname: `用户${phone.slice(-4)}`,
-          });
-
-        console.log("➕ [创建用户] 插入操作完成");
-        
-        if (insertError) {
-          console.error("❌ [创建用户] 失败:", insertError);
-          // 创建用户失败，不影响登录，但不发放奖励
-        } else {
-          console.log("✅ [创建用户] 成功");
-          
-          // 新用户注册，发放注册奖励和处理邀请奖励
-          // 使用try-catch包裹，确保奖励发放失败不影响登录
-          console.log("🎁 [注册奖励] 开始处理注册奖励和邀请奖励");
-          try {
-            await handleUserRegistration(data.user.id, inviteCode);
-            console.log("✅ [注册奖励] 处理完成");
-          } catch (rewardError) {
-            console.error("❌ [注册奖励] 处理失败:", rewardError);
-            // 奖励发放失败不影响登录流程
-          }
-        }
-      } else {
-        console.log("✅ [检查用户] 用户已存在，ID:", existingUser.id);
-      }
-    } else {
-      console.warn("⚠️ [验证登录] data.user为空");
+      await ensureUserProfile(data.user, undefined, true);
     }
-    
+
     console.log("========================================");
     return data;
   } catch (error) {
-    console.error("❌ [验证登录] 异常:", error);
+    console.error("❌ [邮箱登录] 异常:", error);
     console.log("========================================");
     throw error;
   }
@@ -233,7 +257,7 @@ export async function getCurrentUser() {
     
     console.log("✅ [获取当前用户] 成功");
     console.log("用户ID:", user?.id);
-    console.log("用户手机:", user?.phone);
+    console.log("用户邮箱:", user?.email || user?.phone);
     console.log("========================================");
     return user;
   } catch (error) {
@@ -2809,4 +2833,3 @@ export async function updateAIModelConfig(config: AIModelConfig): Promise<void> 
     throw error;
   }
 }
-

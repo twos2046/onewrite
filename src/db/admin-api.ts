@@ -314,7 +314,7 @@ export async function searchUsers(keyword: string): Promise<UserWithAdmin[]> {
   const { data, error } = await supabase
     .from('users')
     .select('*')
-    .or(`nickname.ilike.%${keyword}%,phone.ilike.%${keyword}%`)
+    .or(`nickname.ilike.%${keyword}%,email.ilike.%${keyword}%`)
     .order('created_at', { ascending: false })
     .limit(100);
 
