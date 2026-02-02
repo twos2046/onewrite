@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { loginWithEmail, registerWithEmail } from "@/db/api";
+import { loginWithEmail, registerWithEmail, resendSignupEmail } from "@/db/api";
 import { BRAND_NAME } from "@/config/brand";
 
 interface LoginDialogProps {
@@ -23,6 +23,8 @@ export function LoginDialog({ open, onOpenChange, onLoginSuccess }: LoginDialogP
   const [inviteCode, setInviteCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [previousOpen, setPreviousOpen] = useState(false);
+  const [showResend, setShowResend] = useState(false);
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -47,6 +49,7 @@ export function LoginDialog({ open, onOpenChange, onLoginSuccess }: LoginDialogP
     setPassword("");
     setConfirmPassword("");
     setInviteCode("");
+    setShowResend(false);
   };
 
   const validateEmail = (value: string) => {
@@ -87,13 +90,19 @@ export function LoginDialog({ open, onOpenChange, onLoginSuccess }: LoginDialogP
     }
 
     setLoading(true);
+    setShowResend(false);
     try {
       await loginWithEmail(email.trim(), password);
       await new Promise((resolve) => setTimeout(resolve, 300));
       await handleAuthSuccess(false);
     } catch (error: any) {
       console.error("❌ [邮箱登录] 失败:", error);
-      toast.error(error.message || "登录失败，请重试");
+      if (String(error.message || "").includes("Invalid login credentials")) {
+        toast.error("登录失败：请确认邮箱已完成验证，或检查密码是否正确。");
+        setShowResend(true);
+      } else {
+        toast.error(error.message || "登录失败，请重试");
+      }
     } finally {
       setLoading(false);
     }
@@ -225,6 +234,32 @@ export function LoginDialog({ open, onOpenChange, onLoginSuccess }: LoginDialogP
           >
             {loading ? "处理中..." : mode === "login" ? "登录" : "注册并开始"}
           </Button>
+
+          {mode === "login" && showResend && (
+            <Button
+              variant="outline"
+              onClick={async () => {
+                if (!validateEmail(email)) {
+                  toast.error("请输入正确的邮箱");
+                  return;
+                }
+                setResending(true);
+                try {
+                  await resendSignupEmail(email.trim());
+                  toast.success("验证邮件已重新发送，请检查邮箱");
+                } catch (error: any) {
+                  console.error("❌ [重发验证邮件] 失败:", error);
+                  toast.error(error.message || "发送失败，请稍后重试");
+                } finally {
+                  setResending(false);
+                }
+              }}
+              disabled={resending}
+              className="w-full"
+            >
+              {resending ? "发送中..." : "重新发送验证邮件"}
+            </Button>
+          )}
         </div>
       </DialogContent>
     </Dialog>

@@ -37,6 +37,44 @@ const buildNickname = (email?: string | null, fallback?: string | null) => {
   return `用户${Date.now().toString().slice(-4)}`;
 };
 
+const isMissingTableError = (error: any) => {
+  if (!error) return false;
+  const message = String(error.message || "");
+  return (
+    error.status === 404 ||
+    message.includes("relation") ||
+    message.includes("does not exist") ||
+    message.includes("Not Found")
+  );
+};
+
+const buildFallbackUser = (user: {
+  id: string;
+  email?: string | null;
+  phone?: string | null;
+  created_at?: string;
+}) => {
+  const now = new Date().toISOString();
+  return {
+    id: user.id,
+    email: user.email ?? null,
+    phone: user.phone ?? null,
+    nickname: buildNickname(user.email ?? null, user.phone ?? null),
+    avatar_url: null,
+    score: 0,
+    consecutive_checkin_days: 0,
+    last_checkin_date: null,
+    membership_level: "free" as const,
+    credits: 0,
+    last_credit_grant_date: now,
+    pending_membership_level: null,
+    pending_membership_effective_date: null,
+    is_admin: false,
+    created_at: user.created_at ?? now,
+    updated_at: now,
+  };
+};
+
 const ensureUserProfile = async (
   user: { id: string; email?: string | null; phone?: string | null },
   inviteCode?: string,
@@ -52,6 +90,10 @@ const ensureUserProfile = async (
   console.log("🔍 [检查用户] 查询完成");
 
   if (userError) {
+    if (isMissingTableError(userError)) {
+      console.warn("⚠️ [检查用户] users 表不存在，跳过用户档案初始化");
+      return;
+    }
     console.error("❌ [检查用户] 查询失败:", userError);
     return;
   }
@@ -180,6 +222,34 @@ export async function loginWithEmail(email: string, password: string) {
 }
 
 /**
+ * 重新发送注册验证邮件
+ */
+export async function resendSignupEmail(email: string) {
+  console.log("========================================");
+  console.log("📨 [重发验证邮件] 开始");
+  console.log("邮箱:", email);
+  try {
+    const { data, error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+    });
+
+    if (error) {
+      console.error("❌ [重发验证邮件] 失败:", error);
+      throw error;
+    }
+
+    console.log("✅ [重发验证邮件] 成功");
+    console.log("========================================");
+    return data;
+  } catch (error) {
+    console.error("❌ [重发验证邮件] 异常:", error);
+    console.log("========================================");
+    throw error;
+  }
+}
+
+/**
  * 退出登录
  */
 export async function signOut() {
@@ -299,6 +369,14 @@ export async function getUserProfile(userId: string): Promise<DbUser | null> {
       .maybeSingle();
 
     if (error) {
+      if (isMissingTableError(error)) {
+        console.warn("⚠️ [获取用户信息] users 表不存在，使用 auth 用户信息临时兼容");
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user) {
+          return buildFallbackUser(authData.user);
+        }
+        return null;
+      }
       console.error("❌ [获取用户信息] 失败:", error);
       throw error;
     }
@@ -332,6 +410,10 @@ export async function updateUserProfile(userId: string, updates: Partial<DbUser>
       .single();
 
     if (error) {
+      if (isMissingTableError(error)) {
+        console.warn("⚠️ [更新用户信息] users 表不存在，跳过更新");
+        return updates as DbUser;
+      }
       console.error("❌ [更新用户信息] 失败:", error);
       throw error;
     }
@@ -1849,6 +1931,10 @@ export async function getAllSystemSettings(): Promise<SystemSetting[]> {
       .order('key', { ascending: true });
 
     if (error) {
+      if (isMissingTableError(error)) {
+        console.warn('⚠️ system_settings 表不存在，返回空配置');
+        return [];
+      }
       console.error('获取系统设置失败:', error);
       throw error;
     }
@@ -1872,6 +1958,10 @@ export async function getSystemSetting(key: SystemSettingKey): Promise<string | 
       .maybeSingle();
 
     if (error) {
+      if (isMissingTableError(error)) {
+        console.warn(`⚠️ system_settings 表不存在，跳过读取 ${key}`);
+        return null;
+      }
       console.error(`获取系统设置 ${key} 失败:`, error);
       throw error;
     }
@@ -2144,6 +2234,10 @@ export async function getPromotionSettings(): Promise<PromotionSettings | null> 
     .maybeSingle();
 
   if (error) {
+    if (isMissingTableError(error)) {
+      console.warn('⚠️ promotion_settings 表不存在，返回空设置');
+      return null;
+    }
     console.error('获取限免设置失败:', error);
     throw error;
   }
